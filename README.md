@@ -13,40 +13,82 @@ This README explains how to run the app locally, the available APIs, and quick v
 - Conversational clarifications (quick reply suggestions) for ambiguous queries
 - Chat results include clickable links that scroll & highlight property cards
 
-## Repository layout
+*** Begin Patch
+
+# Real-Estate-Chatbot
+
+This repository is a demo Real Estate chatbot with a modern React + Vite frontend and a Node.js + Express backend. The app demonstrates:
+
+- Natural-language property search (rule-based NLP + fuzzy matching)
+- An in-browser lightweight AI-style responder (data-driven summaries and recommendations)
+- Guided conversational flow to collect user preferences
+- Clickable chat results that scroll & highlight property cards
+- Favorites persistence via a simple backend (MongoDB + Mongoose)
+- Responsive, polished UI for desktop and mobile
+
+This README documents what's included, the tech stack, how to run the project locally, common troubleshooting, and next steps.
+
+---
+
+## Tech stack & libraries used
+
+- Frontend: React (with Vite), CSS (App.css)
+	- Key frontend files: `frontend/real-estate-chatbot/src/App.jsx`, `ChatPanel.jsx`, `App.css`
+- Backend: Node.js + Express
+	- Key backend files: `backend/server.js`, `backend/models/Favorite.js`, `backend/data/*` (property data files)
+- Database: MongoDB (Atlas or local) via Mongoose
+- NLP: `compromise` for lightweight entity extraction
+- Search helpers: custom Levenshtein fuzzy matcher + rule-based extraction
+
+Other tooling:
+- ESLint (linting), Vite (dev server + build)
+
+---
+
+## Repo layout
 
 ```
 .
-├── backend/
-│   ├── server.js        # Express server and API routes
-│   ├── models/          # Mongoose models (Favorite.js)
-│   └── data/            # Local property JSON files
-├── frontend/
-│   └── real-estate-chatbot/  # React + Vite app
-│       └── src/
-│           ├── App.jsx
-│           └── ChatPanel.jsx
-├── package.json         # workspace scripts (optional)
+├── backend/                          # Express API and data
+│   ├── server.js                     # Main API server
+│   ├── models/Favorite.js            # Mongoose schema for favorites
+│   └── data/                         # Local property JSON files used for demo
+├── frontend/                          
+│   └── real-estate-chatbot/          # React + Vite frontend
+│       ├── index.html
+│       ├── src/
+│       │   ├── App.jsx               # Main UI + chatbot orchestration
+│       │   ├── ChatPanel.jsx         # Chat UI component
+│       │   ├── App.css               # Styling and responsive rules
+│       │   └── ...                   # other assets and components
+├── package.json                       # workspace scripts (optional)
 └── README.md
 ```
 
+---
+
 ## Prerequisites
-- Node.js (16+ recommended)
-- npm
-- MongoDB (Atlas or local). The backend will read `MONGODB_URI` from environment (see below).
 
-## Backend — run locally
+- Node.js (v16+ recommended)
+- npm (or yarn)
+- MongoDB (Atlas connection string or a local MongoDB instance)
 
-1. Open a terminal and go to the backend folder:
+You don't need any paid APIs — the AI-like responses and search run locally on your machine using the property data shipped with the repo.
+
+---
+
+## Quick start — backend
+
+1. Install dependencies and configure the backend:
 
 ```bash
 cd backend
 npm install
+# create a .env file (or set env var) with MONGODB_URI
+# an example is provided: backend/.env.example
 ```
 
-2. Create a `.env` or set `MONGODB_URI` in your environment. An example file is provided as `backend/.env.example`.
-
-3. Start the backend (default port 5001 is used in development in this repo):
+2. Start the backend (default port 5001):
 
 ```bash
 # from repo root
@@ -54,59 +96,91 @@ cd backend
 PORT=5001 node server.js
 ```
 
-4. Verify the API:
+3. Verify the API:
 
 ```bash
-curl http://localhost:5001/api/properties | head -n 1
+curl http://localhost:5001/api/properties | head -n 2
 curl "http://localhost:5001/api/favorites?user=demo%40email.com"
 ```
 
-### API summary
-- GET /api/properties — returns the property list (merged from `backend/data` files)
+### Backend API summary
+
+- GET /api/properties — returns the demo property list (merged from files in `backend/data`)
 - GET /api/favorites?user=<email> — returns favorites for a user
-- POST /api/favorites { user, propertyId } — save a favorite (JSON body)
-- DELETE /api/favorites { user, propertyId } — remove a favorite (JSON body)
+- POST /api/favorites — save a favorite (JSON body { user, propertyId })
+- DELETE /api/favorites — remove a favorite (JSON body { user, propertyId })
 
-Note: `propertyId` in favorites is stored as a string in the current schema. Consider migrating to a numeric id if you prefer numeric types.
+Notes:
+- `Favorite.propertyId` is currently stored as a string in the demo schema. If you prefer numeric ids, migrate the DB accordingly.
 
-## Frontend — run locally
+---
 
-1. Open a terminal and go to the frontend folder:
+## Quick start — frontend
+
+1. Install dependencies and run the dev server:
 
 ```bash
 cd frontend/real-estate-chatbot
 npm install
+npm run dev
 ```
 
-2. Start the dev server:
+2. Open the URL printed by Vite (commonly `http://localhost:5173`).
+
+3. Try these interactions in the chat:
+
+- Ask for recommendations: `Find me 2 BHK in Mumbai under 1 crore`
+- Ask for price statistics: `What's the average price in Bangalore?`
+- Guided flow: click the `Guided` button next to the chat toggle — the chatbot will ask a short sequence of questions and return recommended properties
+- Quick clarifications: `Show 2 or 3 bhk in New York` — bot asks which one you prefer
+
+Click `View property` on a chat result to scroll & highlight the property card in the listing.
+
+---
+
+## Developer scripts & linting
+
+- Frontend linting (from `frontend/real-estate-chatbot`):
+
+```bash
+cd frontend/real-estate-chatbot
+npm run lint
+```
+
+- Frontend dev server (Vite):
 
 ```bash
 npm run dev
 ```
 
-3. Open the app in your browser (Vite prints the local URL; commonly `http://localhost:5173`).
-
-4. Try chat examples:
-- Ambiguous bedrooms: `Show 2 or 3 bhk in New York` — bot asks for clarification.
-- Fuzzy location: mistype a known place (e.g. `Banaglore`) — bot suggests a likely match.
-- Approximate price: `Looking for properties around 50 lakh` — bot asks to refine.
-
-Clicking the `View property` button in a chat result will scroll and briefly highlight the matching property card on the right.
-
-## Troubleshooting
-- If the backend warns about `MONGODB_URI` missing, set it in `backend/.env` or export it in your shell and restart the server.
-- macOS sometimes has system services bound to port 5000 — this repo uses 5001 by default to avoid conflicts.
-- If Vite picks another port (e.g. 5174) it prints the correct URL in the terminal; open that address.
-
-## Notes & next steps
-- The NLP is rule-based (uses `compromise`) and includes a small fuzzy helper (Levenshtein) — for higher-quality NLU you can integrate a dedicated NLU/intent service or use embeddings/semantic search.
-- Consider converting `Favorite.propertyId` to a numeric field and migrating existing records for type consistency.
-- You can add unit/e2e tests (Playwright) to automatically verify chat flows and result linking.
-
-## License
-This repository is provided as-is for demo/learning purposes.
+If port 5173 is in use, Vite will suggest and use the next available port (e.g., 5174).
 
 ---
 
-If you want I can also add a short `CONTRIBUTING.md` and a Playwright script that exercises the chat flows automatically.
-# Real-Estate-Chatbot
+## What changed / notable features in this branch
+
+- Responsive UI: improved layout, responsive property grid, and polished property cards
+- Redesigned chat panel: header, avatars, readable bubbles, suggestion buttons, result cards with thumbnails and CTA
+- Lightweight local AI-style responder: data-driven summaries and recommendations (no external API required)
+- Guided conversational flow: collects location, type, price, bedrooms and returns ranked results
+
+---
+
+## Security & secrets
+
+- Do NOT commit real secrets (MongoDB credentials, API keys) into the repository. The backend reads `MONGODB_URI` from the environment — use `backend/.env` locally and add it to your `.gitignore`.
+- If you believe any secret was committed accidentally, rotate the secret immediately and remove it from git history.
+
+---
+
+## Optional next steps / suggestions
+
+- Replace the rule-based NLP with an embeddings-based semantic search or integrate an LLM (hosted or local) for richer natural-language responses. I can help wire a local LLM server (gpt4all/llama.cpp) or a secure server-side proxy to a hosted LLM.
+- Add Playwright E2E tests to validate chat flows and the `View property` linking behavior.
+- Improve accessibility: keyboard focus trap for the chat, ARIA attributes, and screen-reader friendly labels.
+
+---
+
+If you want, I can update this README further to include one-command scripts, CI configuration, or a Playwright test that exercises the guided chat flow.
+
+*** End Patch
