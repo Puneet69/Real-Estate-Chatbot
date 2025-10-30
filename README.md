@@ -166,6 +166,41 @@ If port 5173 is in use, Vite will suggest and use the next available port (e.g.,
 
 ---
 
+## Challenges we faced and the approach we used
+
+During development we hit several practical challenges. Below is a concise list of those challenges and the concrete approaches we used to address them:
+
+- Data heterogeneity and numeric formats
+	- Challenge: Property data contains prices in different formats and units (lakhs/crores, K/M, spelled-out numbers). Parsing numeric user input reliably is tricky.
+	- Approach: Implemented robust numeric parsing helpers (supporting lakh/crore/K/M and common number-words) and normalized property prices for consistent comparisons and scoring.
+
+- Ambiguous or incomplete user queries
+	- Challenge: Users often ask vague questions ("2 or 3 bhk", "around 50 lakh") that lack clear filters.
+	- Approach: Added a guided conversational flow and clarification prompts. We ask short follow-up questions when the intent or filters are ambiguous to collect the missing pieces before searching.
+
+- Fuzzy/misspelled locations and entities
+	- Challenge: Users mistype place names (e.g., "Banaglore") or use alternative names that don't match dataset strings exactly.
+	- Approach: Implemented a Levenshtein-based fuzzy matcher and a small ruleset for common synonyms to map user terms to dataset locations. Scoring tolerates small typos and ranks close matches higher.
+
+- No external paid LLMs (cost and privacy constraints)
+	- Challenge: The user requested an AI-like experience without relying on paid APIs.
+	- Approach: Built an in-browser, deterministic "AI-style" responder that composes data-driven summaries (price stats, short rationales and ranked recommendations) using the property dataset and extraction rules. This keeps the experience free, deterministic, and local to the user.
+
+- Relevance ranking and simple scoring
+	- Challenge: Multiple properties can match a query; ranking must surface the most relevant results.
+	- Approach: Designed a lightweight scoring function combining exact matches, fuzzy matches, numeric distance (price/bedrooms), and recency/boost heuristics. The score is tunable and intentionally simple for explainability.
+
+- UX & discoverability for chat-driven search
+	- Challenge: Ensuring chat results are actionable and tie back to the property listing view.
+	- Approach: Created rich chat-result cards with thumbnails and a `View property` CTA that scrolls and highlights the relevant property card. Also added quick-reply suggestions for common clarifications.
+
+- Linting, environment configuration, and port conflicts
+	- Challenge: Development environments differ (ports, local services), and accidental secrets may be introduced.
+	- Approach: Use environment variables (`MONGODB_URI`) with `.env.example`. Chose port 5001 for the backend to reduce macOS port conflicts, and fixed ESLint warnings iteratively.
+
+These approaches emphasize predictable behavior, low infrastructure cost, and good UX while leaving clear places to upgrade (semantic search, embeddings, or hosted LLM integration) when you need higher-quality NLU or larger-scale retrieval.
+
+
 ## Security & secrets
 
 - Do NOT commit real secrets (MongoDB credentials, API keys) into the repository. The backend reads `MONGODB_URI` from the environment — use `backend/.env` locally and add it to your `.gitignore`.
