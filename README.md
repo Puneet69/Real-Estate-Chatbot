@@ -215,7 +215,4 @@ These approaches emphasize predictable behavior, low infrastructure cost, and go
 - Improve accessibility: keyboard focus trap for the chat, ARIA attributes, and screen-reader friendly labels.
 
 ---
-
-If you want, I can update this README further to include one-command scripts, CI configuration, or a Playwright test that exercises the guided chat flow.
-
 *** End Patch
