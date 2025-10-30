@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import ChatPanel from "./ChatPanel";
+import "./App.css";
 import nlp from "compromise";
 
 // Simple Levenshtein distance for fuzzy matching (small strings only)
@@ -18,6 +19,33 @@ function levenshtein(a = "", b = "") {
   return dp[m][n];
 }
 
+// parse numbers with units (lakh/crore/k/m/million)
+function parseNumberWithUnitGlobal(nStr, unit) {
+  const v = Number(String(nStr).replace(/[_,\s]/g, "")) || 0;
+  if (!unit) return v;
+  unit = String(unit).toLowerCase();
+  if (unit.includes('lakh') || unit === 'lac') return v * 100000;
+  if (unit.includes('crore')) return v * 10000000;
+  if (unit === 'k') return v * 1000;
+  if (unit === 'm' || unit.includes('million')) return v * 1000000;
+  return v;
+}
+
+function parseNumberOrWord(s) {
+  if (!s) return null;
+  const clean = String(s).trim().toLowerCase();
+  const words = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 };
+  if (words[clean] !== undefined) return words[clean];
+  // match patterns like '50 lakh' or '1.5 crore'
+  const m = clean.match(/(\d+[\d.,]*)(?:\s*)(lakh|lac|crore|k|m|million)?/i);
+  if (m) {
+    return parseNumberWithUnitGlobal(m[1], m[2]);
+  }
+  // plain number
+  const n = Number(clean.replace(/[_,]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
 // NLP-based extraction function
 function extractFilters(text) {
   const doc = nlp(text.toLowerCase());
@@ -32,35 +60,26 @@ function extractFilters(text) {
   }
 
   // Helper to convert shorthand units like lakh/crore/k/m
-  function parseNumberWithUnit(nStr, unit) {
-    const v = Number(String(nStr).replace(/[,\s]/g, "")) || 0;
-    if (!unit) return v;
-    unit = unit.toLowerCase();
-    if (unit.includes('lakh') || unit === 'lac') return v * 100000;
-    if (unit.includes('crore')) return v * 10000000;
-    if (unit === 'k') return v * 1000;
-    if (unit === 'm' || unit.includes('million')) return v * 1000000;
-    return v;
-  }
+  // use global parser for units
 
   // Price parsing: supports 'under 50 lakh', 'below 1 crore', 'between 20 lakh and 50 lakh', 'max 5000000'
   let minPrice = 0;
   let maxPrice = Infinity;
   const betweenMatch = text.match(/between\s+(\d+[\d.,]*)\s*(lakh|lac|crore|k|m|million)?\s*(?:and|-|to)\s*(\d+[\d.,]*)\s*(lakh|lac|crore|k|m|million)?/i);
   if (betweenMatch) {
-    const a = parseNumberWithUnit(betweenMatch[1], betweenMatch[2]);
-    const b = parseNumberWithUnit(betweenMatch[3], betweenMatch[4]);
+    const a = parseNumberWithUnitGlobal(betweenMatch[1], betweenMatch[2]);
+    const b = parseNumberWithUnitGlobal(betweenMatch[3], betweenMatch[4]);
     minPrice = Math.min(a, b);
     maxPrice = Math.max(a, b);
   } else {
     // look for phrases like 'under 50 lakh' or 'below 1 crore' or 'up to 50 lakh'
-  const underMatch = text.match(/(?:under|below|less than|up to|upto|max|min|max price|below)\s+(\d+[\d.,]*)\s*(lakh|lac|crore|k|m|million)?/i);
+    const underMatch = text.match(/(?:under|below|less than|up to|upto|max|min|max price|below)\s+(\d+[\d.,]*)\s*(lakh|lac|crore|k|m|million)?/i);
     if (underMatch) {
-      maxPrice = parseNumberWithUnit(underMatch[1], underMatch[2]);
+      maxPrice = parseNumberWithUnitGlobal(underMatch[1], underMatch[2]);
     }
   const overMatch = text.match(/(?:over|above|more than|min price|at least)\s+(\d+[\d.,]*)\s*(lakh|lac|crore|k|m|million)?/i);
     if (overMatch) {
-      minPrice = parseNumberWithUnit(overMatch[1], overMatch[2]);
+      minPrice = parseNumberWithUnitGlobal(overMatch[1], overMatch[2]);
     }
     // direct price mentions like '50 lakh' or '1 crore'
   const directMatches = [...text.matchAll(/(\d+[\d.,]*)(?:\s*)(lakh|lac|crore|k|m|million)?/ig)];
@@ -68,7 +87,7 @@ function extractFilters(text) {
     if (directMatches.length > 0 && maxPrice === Infinity && minPrice === 0) {
       // choose the first reasonable match
       const dm = directMatches[0];
-      const val = parseNumberWithUnit(dm[1], dm[2]);
+      const val = parseNumberWithUnitGlobal(dm[1], dm[2]);
       // If the sentence contains words like 'budget' or 'price' consider it as maxPrice
       if (/price|budget|cost|under|below|upto|up to|max|min|less than|crore|lakh|lac/i.test(text)) {
         maxPrice = val;
@@ -177,7 +196,17 @@ function App() {
   const [properties, setProperties] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [search, setSearch] = useState("");
+  // Filters
+  const [filterLocation, setFilterLocation] = useState("Any");
+  const [filterMinPrice, setFilterMinPrice] = useState(0);
+  const [filterMaxPrice, setFilterMaxPrice] = useState(0);
+  const [filterType, setFilterType] = useState("Any");
   const [highlighted, setHighlighted] = useState(null);
+  // Guided search state
+  const [guidedMode, setGuidedMode] = useState(false);
+  const [guidedStep, setGuidedStep] = useState(-1);
+  const [guidedAnswers, setGuidedAnswers] = useState({});
+  const [chatAddMessage, setChatAddMessage] = useState(null);
   const user = "demo@email.com";
 
   useEffect(() => {
@@ -234,8 +263,21 @@ function App() {
   };
 
   const handleChatInput = (text, addMessage) => {
+    // If guided mode active, handle guided answers
+    if (guidedMode) {
+      handleGuidedAnswer(text, addMessage);
+      return;
+    }
     // Echo typing message
     addMessage({ sender: "bot", text: "Let me check..." });
+
+    // Try the lightweight AI responder first
+    try {
+      const handled = generateAIResponse(text, addMessage);
+      if (handled) return;
+    } catch {
+      // if AI responder fails for any reason, fall back to old flows
+    }
 
     // Extract filters and look for ambiguous cases
     const filters = extractFilters(text);
@@ -297,19 +339,186 @@ function App() {
       }
       addMessage({ sender: "bot", text: `Found ${results.length} matching properties. Showing top 5:` });
       results.slice(0, 5).forEach((p) => {
-        // send a result message with a linkable property id for clicking
-        addMessage({ sender: "bot", text: `${p.title} in ${p.location}, ₹${p.price}`, type: 'result', propertyId: p.id });
+        // send a result message with a linkable property id for clicking and include metadata
+        addMessage({ sender: "bot", text: `${p.title} in ${p.location}, ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price });
       });
     }, 800);
   };
 
+  // --- Guided search helpers ---
+  const guidedQuestions = (props) => [
+    { key: 'location', text: 'Which location are you interested in?', suggestions: props.topLocations || [] },
+    { key: 'type', text: 'Which property type do you prefer? (apartment / villa / studio / condo)', suggestions: ['apartment', 'villa', 'studio', 'condo'] },
+    { key: 'minPrice', text: 'Minimum price (enter a number, leave blank for no minimum)' },
+    { key: 'maxPrice', text: 'Maximum price (enter a number, leave blank for no maximum)' },
+    { key: 'bedrooms', text: 'How many bedrooms? (enter number or "any")', suggestions: ['1', '2', '3', '4', 'any'] },
+  ];
+
+  const startGuided = (addMessage) => {
+    setGuidedMode(true);
+    setGuidedStep(0);
+    setGuidedAnswers({});
+    const tops = [...new Set(properties.map(p => (p.location || '').split(',')[0].trim()))].filter(Boolean).slice(0,6);
+    const q = guidedQuestions({ topLocations: tops })[0];
+    addMessage({ sender: 'bot', text: 'Great — let me ask a few quick questions to refine results.' });
+    setTimeout(() => addMessage({ sender: 'bot', text: q.text, suggestions: q.suggestions }), 300);
+  };
+
+  const finishGuided = (addMessage, answers) => {
+    // Parse numeric answers and compose a synthetic query string and search
+    const parts = [];
+    if (answers.location) parts.push(`in ${answers.location}`);
+    if (answers.type) parts.push(answers.type);
+    const parsedMin = parseNumberOrWord(answers.minPrice);
+    const parsedMax = parseNumberOrWord(answers.maxPrice);
+    if (parsedMin && Number(parsedMin) > 0) parts.push(`min ${parsedMin}`);
+    if (parsedMax && Number(parsedMax) > 0) parts.push(`max ${parsedMax}`);
+    const parsedBeds = parseNumberOrWord(answers.bedrooms);
+    if (parsedBeds && parsedBeds !== 'any') parts.push(`${parsedBeds} bhk`);
+    const query = parts.join(' ');
+    const results = performPropertySearch(properties, query);
+    if (results.length === 0) {
+      addMessage({ sender: 'bot', text: 'Sorry, I could not find properties matching those filters.' });
+      setGuidedMode(false);
+      setGuidedStep(-1);
+      return;
+    }
+  addMessage({ sender: 'bot', text: `Found ${results.length} properties. Showing top 5:` });
+  results.slice(0,5).forEach(p => addMessage({ sender: 'bot', text: `${p.title} — ${p.location} — ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price }));
+    setGuidedMode(false);
+    setGuidedStep(-1);
+    setGuidedAnswers({});
+  };
+
+  const handleGuidedAnswer = (text, addMessage) => {
+    const questions = guidedQuestions({ topLocations: [] });
+    const step = guidedStep;
+    if (step < 0 || step >= questions.length) {
+      setGuidedMode(false);
+      return;
+    }
+    const key = questions[step].key;
+    const val = String(text).trim();
+    setGuidedAnswers((prev) => ({ ...prev, [key]: val }));
+    // Advance
+    const next = step + 1;
+    if (next < questions.length) {
+      const nextQ = questions[next];
+      setGuidedStep(next);
+      setTimeout(() => addMessage({ sender: 'bot', text: nextQ.text, suggestions: nextQ.suggestions }), 300);
+    } else {
+      // finish
+      finishGuided(addMessage, { ...guidedAnswers, [key]: val });
+    }
+  };
+
+  // --- Lightweight AI-style responder (template + data-driven) ---
+  const formatCurrency = (n) => {
+    try {
+      return `₹${Number(n).toLocaleString()}`;
+    } catch {
+      return `₹${n}`;
+    }
+  };
+
+  const generateAIResponse = (text, addMessage) => {
+    const filters = extractFilters(text);
+    const results = performPropertySearch(properties, text);
+
+    // Helper: stats for a set of properties
+    const statsFor = (items) => {
+      if (!items || items.length === 0) return null;
+      const prices = items.filter(p => typeof p.price === 'number').map(p => p.price);
+      if (prices.length === 0) return null;
+      const sum = prices.reduce((s, v) => s + v, 0);
+      const avg = Math.round(sum / prices.length);
+      const min = Math.min(...prices);
+      const max = Math.max(...prices);
+      return { avg, min, max, count: items.length };
+    };
+
+    // Detect price-statistics questions
+    if (/average|mean|median|price range|price in|range of prices|what is the price/i.test(text)) {
+      // Prefer scoped results (by location) if present
+      let scopeItems = results;
+      if (filters.location && (!results || results.length === 0)) {
+        scopeItems = properties.filter(p => (p.location||'').toLowerCase().includes((filters.location||'').toLowerCase()));
+      }
+      const s = statsFor(scopeItems.length > 0 ? scopeItems : properties);
+      if (!s) {
+        addMessage({ sender: 'bot', text: 'I don\'t have price data for those criteria. Try a different location or check the property listings.' });
+        return true;
+      }
+      const locText = filters.location ? ` in ${filters.location}` : '';
+      addMessage({ sender: 'bot', text: `Across ${s.count} listings${locText}, prices range from ${formatCurrency(s.min)} to ${formatCurrency(s.max)} with an average of ${formatCurrency(s.avg)}.` });
+      // show top results if any
+      if (results && results.length > 0) {
+        addMessage({ sender: 'bot', text: `Here are the top ${Math.min(5, results.length)} listings I found:` });
+        results.slice(0,5).forEach(p => addMessage({ sender: 'bot', text: `${p.title} — ${p.location} — ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price }));
+      }
+      return true;
+    }
+
+    // If user asks a question about availability or recommendations
+    if (/suggest|recommend|show me|find me|looking for|available|any listings|help me find/i.test(text)) {
+      if (!results || results.length === 0) {
+        addMessage({ sender: 'bot', text: 'I could not find matching properties — try widening your criteria or tell me a location and budget.' });
+        return true;
+      }
+      // Compose a short rationale explaining why top result is recommended
+      const top = results[0];
+      const reasonParts = [];
+      if (filters.location && (top.location || '').toLowerCase().includes(filters.location.toLowerCase())) reasonParts.push('matches your location');
+      if (filters.bedrooms && top.bedrooms === filters.bedrooms) reasonParts.push(`${filters.bedrooms} BHK`);
+      if (filters.propertyType && (top.title || '').toLowerCase().includes(filters.propertyType)) reasonParts.push(filters.propertyType);
+      if (filters.minPrice || filters.maxPrice) {
+        reasonParts.push(`within your price range`);
+      }
+      const reason = reasonParts.length > 0 ? ` — ${reasonParts.join(', ')}` : '';
+      addMessage({ sender: 'bot', text: `I recommend: ${top.title} in ${top.location}, priced ${formatCurrency(top.price)}${reason}.` });
+      addMessage({ sender: 'bot', text: `I found ${results.length} matching properties. Showing top ${Math.min(5, results.length)}:` });
+  results.slice(0,5).forEach(p => addMessage({ sender: 'bot', text: `${p.title} — ${p.location} — ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price }));
+      return true;
+    }
+
+    // Generic fallback: if search yields results, summarize and present them
+    if (results && results.length > 0) {
+      addMessage({ sender: 'bot', text: `I found ${results.length} properties that seem relevant. Top picks:` });
+  results.slice(0,5).forEach(p => addMessage({ sender: 'bot', text: `${p.title} — ${p.location} — ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price }));
+      return true;
+    }
+
+    // If nothing matched, return false so caller can run fallback flows
+    return false;
+  };
+
   // Normal UI search
-  const filteredProperties = properties.filter(
-    (p) =>
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.location.toLowerCase().includes(search.toLowerCase()) ||
-      String(p.price).includes(search)
-  );
+  const filteredProperties = properties.filter((p) => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch = q === '' || p.title.toLowerCase().includes(q) || p.location.toLowerCase().includes(q) || String(p.price).includes(q);
+
+    // Filters: location
+    if (filterLocation && filterLocation !== 'Any') {
+      const loc0 = (p.location || '').split(',')[0].trim().toLowerCase();
+      if (!loc0.includes(filterLocation.toLowerCase())) return false;
+    }
+
+    // Type
+    if (filterType && filterType !== 'Any') {
+      const title = (p.title || '').toLowerCase();
+      if (!title.includes(filterType.toLowerCase())) return false;
+    }
+
+    // Price
+    if (filterMinPrice && Number(filterMinPrice) > 0) {
+      if (typeof p.price === 'number' && p.price < Number(filterMinPrice)) return false;
+    }
+    if (filterMaxPrice && Number(filterMaxPrice) > 0) {
+      if (typeof p.price === 'number' && p.price > Number(filterMaxPrice)) return false;
+    }
+
+    return matchesSearch;
+  });
   const favoriteProps = properties.filter((p) =>
     favorites.includes(String(p.id))
   );
@@ -317,32 +526,66 @@ function App() {
   const [showChat, setShowChat] = useState(false);
 
   return (
-    <div style={{ display: "flex", height: "100vh", padding: "10px", gap: "20px", position: 'relative' }}>
+    <div className="app-root">
       {/* ChatPanel is rendered as a floating panel via the toggle button below */}
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+  <main className="content">
+        {/* Header with logo and centered headings */}
+  <header className="app-header">
+          <img
+            src="/logo.jpeg"
+            alt="Real Estate Chatbot"
+            className="logo"
+            style={{ height: 72, width: 72 }}
+            onError={(e) => { e.target.onerror = null; e.target.src = '/vite.svg'; e.target.style.filter = 'grayscale(1)'; }}
+          />
+          <h1 className="app-title">Find Your Dream Home</h1>
+          <p className="app-subtitle">Search properties naturally — ask the chatbot.</p>
+        </header>
         <h1 style={{ fontSize: "2.8rem", marginBottom: "10px" }}>
           Property Listings
         </h1>
 
         <input
+          className="search-input"
           type="text"
           placeholder="Search by name, location, or price"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          style={{
-            padding: "10px 16px",
-            fontSize: "1rem",
-            borderRadius: "22px",
-            border: "none",
-            width: "340px",
-            boxShadow: "0 1px 10px #0002",
-            marginBottom: "30px",
-          }}
+          style={{ marginBottom: "30px" }}
         />
 
-        <h2>Saved Favorites</h2>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "24px", marginBottom: "30px" }}>
+        {/* Filters row */}
+  <div className="filters-row">
+          {/* Location select (generated from loaded properties) */}
+          <select value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8 }}>
+            <option>Any</option>
+            {[...new Set(properties.map(p => (p.location || '').split(',')[0].trim()))].filter(Boolean).map((loc) => (
+              <option key={loc} value={loc}>{loc}</option>
+            ))}
+          </select>
+
+          {/* Type select (common types) */}
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ padding: '8px 10px', borderRadius: 8 }}>
+            <option>Any</option>
+            <option>apartment</option>
+            <option>villa</option>
+            <option>studio</option>
+            <option>condo</option>
+          </select>
+
+          {/* Price range inputs */}
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input type="number" placeholder="Min price" value={filterMinPrice || ''} onChange={e => setFilterMinPrice(Number(e.target.value) || 0)} style={{ padding: '8px', borderRadius: 8, width: 120 }} />
+            <span style={{ color: '#ccc' }}>—</span>
+            <input type="number" placeholder="Max price" value={filterMaxPrice || ''} onChange={e => setFilterMaxPrice(Number(e.target.value) || 0)} style={{ padding: '8px', borderRadius: 8, width: 120 }} />
+          </div>
+
+          <button onClick={() => { setFilterLocation('Any'); setFilterType('Any'); setFilterMinPrice(0); setFilterMaxPrice(0); }} style={{ marginLeft: 8, padding: '8px 12px', borderRadius: 8 }}>Clear</button>
+        </div>
+
+  <h2>Saved Favorites</h2>
+  <div className="favorites-grid">
           {favoriteProps.length > 0 ? (
             favoriteProps.map((p) => (
               <div
@@ -362,24 +605,11 @@ function App() {
                   alt={p.title}
                   style={{ width: "100%", height: "120px", objectFit: "cover" }}
                 />
-                <div style={{ padding: "14px" }}>
-                  <h3 style={{ color: "#fff", fontSize: "1.1rem" }}>{p.title}</h3>
-                  <p style={{ color: "#DDD" }}>Location: {p.location}</p>
-                  <p style={{ color: "#DDD" }}>Price: ₹{p.price}</p>
-                  <button
-                    onClick={() => removeFavorite(p.id)}
-                    style={{
-                      marginTop: "10px",
-                      padding: "6px 12px",
-                      backgroundColor: "#f44336",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "10px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Remove from Favorites
-                  </button>
+                <div className="card-body">
+                  <h3 className="card-title">{p.title}</h3>
+                  <p className="card-location">{p.location}</p>
+                  <p className="card-price">{formatCurrency(p.price)}</p>
+                  <button onClick={() => removeFavorite(p.id)} className="action-btn remove-btn">Remove from Favorites</button>
                 </div>
               </div>
             ))
@@ -388,108 +618,42 @@ function App() {
           )}
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "24px" }}>
+        <div className="property-grid">
           {filteredProperties.map((p) => (
-            <div
-              id={`property-${p.id}`}
-              key={p.id}
-              style={{
-                borderRadius: "16px",
-                background: "#222",
-                boxShadow: highlighted === String(p.id) || highlighted === p.id ? "0 0 0 3px #66b2ff66" : "0 4px 16px #0007",
-                width: "320px",
-                overflow: "hidden",
-                marginBottom: "10px",
-                border: "1px solid #333",
-                cursor: "pointer",
-              }}
-            >
-              <img
-                src={p.image_url}
-                alt={p.title}
-                style={{ width: "100%", height: "170px", objectFit: "cover" }}
-              />
-              <div style={{ padding: "18px" }}>
-                <h2
-                  style={{ fontSize: "1.25rem", fontWeight: 700, margin: 0, color: "#fff" }}
-                >
-                  {p.title}
-                </h2>
-                <p style={{ color: "#BBB", margin: "7px 0" }}>
-                  Location: {p.location}
-                </p>
-                <p style={{ color: "#BBB", marginTop: 0 }}>
-                  Price: ₹{p.price}
-                </p>
-                <button
-                  onClick={() => saveFavorite(p.id)}
-                  disabled={favorites.includes(String(p.id))}
-                  style={{
-                    marginTop: "16px",
-                    padding: "8px 16px",
-                    borderRadius: "14px",
-                    border: "none",
-                    background: favorites.includes(String(p.id)) ? "#aaa" : "#4CAF50",
-                    color: "white",
-                    fontWeight: "bold",
-                    cursor: favorites.includes(String(p.id)) ? "not-allowed" : "pointer",
-                    boxShadow: "0 1px 4px #0003",
-                  }}
-                >
-                  {favorites.includes(String(p.id))
-                    ? "✓ Favorited"
-                    : "♥ Save to Favorites"}
+            <div id={`property-${p.id}`} key={p.id} className="property-card" style={{ boxShadow: highlighted === String(p.id) || highlighted === p.id ? "0 0 0 3px #66b2ff66" : undefined }}>
+              <img className="property-image" src={p.image_url} alt={p.title} />
+              <div className="card-body">
+                <h2 className="card-title">{p.title}</h2>
+                <p className="card-location">Location: {p.location}</p>
+                <p className="card-price">{formatCurrency(p.price)}</p>
+                <button onClick={() => saveFavorite(p.id)} disabled={favorites.includes(String(p.id))} className={`action-btn ${favorites.includes(String(p.id)) ? '' : 'save-btn'}`}>
+                  {favorites.includes(String(p.id)) ? '✓ Favorited' : '♥ Save to Favorites'}
                 </button>
               </div>
             </div>
           ))}
         </div>
-      </div>
+        </main>
 
       {/* Floating chat button + panel */}
-      <div style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 1400 }}>
+  <div className="floating-controls">
         {/* Panel container (slides up when open) */}
-        <div
-          aria-hidden={!showChat}
-          style={{
-            position: 'fixed',
-            right: 24,
-            bottom: 90,
-            width: 400,
-            transform: showChat ? 'translateY(0) scale(1)' : 'translateY(10px) scale(.98)',
-            opacity: showChat ? 1 : 0,
-            pointerEvents: showChat ? 'auto' : 'none',
-            transition: 'transform 240ms cubic-bezier(.2,.9,.3,1), opacity 200ms ease',
-          }}
-        >
-          <ChatPanel onUserMessage={(t, a) => { handleChatInput(t, a); }} onResultClick={scrollToProperty} onClose={() => setShowChat(false)} />
+        <div aria-hidden={!showChat} style={{ transform: showChat ? 'translateY(0) scale(1)' : 'translateY(10px) scale(.98)', opacity: showChat ? 1 : 0, pointerEvents: showChat ? 'auto' : 'none', transition: 'transform 240ms cubic-bezier(.2,.9,.3,1), opacity 200ms ease' }}>
+          <div className="chat-panel-root">
+            <ChatPanel onUserMessage={(t, a) => { handleChatInput(t, a); }} onResultClick={scrollToProperty} onClose={() => setShowChat(false)} onReady={(addMessage) => { setChatAddMessage(() => addMessage); }} />
+          </div>
         </div>
 
         {/* Floating toggle button */}
-        <button
-          onClick={() => setShowChat((s) => !s)}
-          aria-label="Open chat"
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: '50%',
-            border: 'none',
-            background: '#4caf50',
-            color: 'white',
-            boxShadow: '0 8px 24px rgba(76,175,80,0.25)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'transform 160ms ease, box-shadow 160ms ease',
-            transform: showChat ? 'scale(0.92) rotate(-10deg)' : 'scale(1)',
-          }}
-        >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+          <button className="chat-toggle" onClick={() => setShowChat((s) => !s)} aria-label="Open chat" style={{ transform: showChat ? 'scale(0.92) rotate(-6deg)' : 'scale(1)' }}>
           {/* Simple chat icon */}
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="white" />
           </svg>
-        </button>
+          </button>
+          <button className="chat-guided-btn" onClick={() => { if (chatAddMessage) startGuided(chatAddMessage); else { setShowChat(true); setTimeout(() => { if (chatAddMessage) startGuided(chatAddMessage); else alert('Open the chat panel first so I can ask a few questions.'); }, 350); } }}>Guided</button>
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-export default function ChatPanel({ onUserMessage, onResultClick, onClose }) {
+export default function ChatPanel({ onUserMessage, onResultClick, onClose, onReady }) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const messagesEndRef = useRef(null);
@@ -12,6 +12,12 @@ export default function ChatPanel({ onUserMessage, onResultClick, onClose }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Expose the addMessage function to parent when ready so App can push messages
+  useEffect(() => {
+    if (typeof onReady === 'function') onReady(addMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const sendMessage = () => {
     if (!input.trim()) return;
     addMessage({ sender: 'user', text: input });
@@ -20,136 +26,56 @@ export default function ChatPanel({ onUserMessage, onResultClick, onClose }) {
   };
 
   return (
-    <div style={{
-      width: '400px',
-      height: '600px',
-      border: '1px solid #333',
-      borderRadius: '10px',
-      background: '#222',
-      color: 'white',
-      display: 'flex',
-      flexDirection: 'column',
-      position: 'relative',
-      boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
-    }}>
-      {/* Close button (visible when rendered as floating panel) */}
-      {onClose && (
-        <button
-          onClick={onClose}
-          aria-label="Close chat"
-          style={{
-            position: 'absolute',
-            right: '8px',
-            top: '8px',
-            background: 'transparent',
-            border: 'none',
-            color: '#bbb',
-            cursor: 'pointer',
-            fontSize: '18px'
-          }}
-        >
-          ✕
-        </button>
-      )}
-      <div style={{
-        flexGrow: 1,
-        overflowY: 'auto',
-        padding: '10px'
-      }}>
+    <div className="chat-panel" style={{ width: '100%', height: '100%', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+      <div className="chat-header">
+        <div className="chat-header-left">
+          <div className="chat-avatar" aria-hidden />
+          <div>
+            <div className="chat-title">Real Estate Assistant</div>
+            <div className="chat-sub">Ask me about listings, budget, or guided search</div>
+          </div>
+        </div>
+        <div className="chat-header-actions">
+          {onClose && (
+            <button onClick={onClose} className="chat-close" aria-label="Close chat">✕</button>
+          )}
+        </div>
+      </div>
+      <div className="chat-panel-messages" role="log" aria-live="polite">
         {messages.map((msg, i) => (
-          <div key={i} style={{
-            textAlign: msg.sender === 'user' ? 'right' : 'left',
-            margin: '8px 0'
-          }}>
-            <div style={{ display: 'inline-block', maxWidth: '80%' }}>
-              <span style={{
-                backgroundColor: msg.sender === 'user' ? '#4caf50' : '#555',
-                padding: '8px',
-                borderRadius: '8px',
-                display: 'inline-block',
-                verticalAlign: 'top'
-              }}>
-                {msg.text}
-              </span>
-
-              {/* Render suggestions if present (quick reply buttons) */}
-              {msg.suggestions && msg.suggestions.length > 0 && (
-                <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {msg.suggestions.map((s, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => onUserMessage(typeof s === 'string' ? s : s.text, addMessage)}
-                      style={{
-                        padding: '6px 10px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        cursor: 'pointer',
-                        background: '#666',
-                        color: 'white'
-                      }}
-                    >
-                      {typeof s === 'string' ? s : s.label || s.text}
-                    </button>
-                  ))}
+          <div key={i} className={`chat-row ${msg.sender === 'user' ? 'chat-row-user' : 'chat-row-bot'}`}>
+            {msg.type === 'result' ? (
+              <div className="chat-result">
+                {msg.image ? <img src={msg.image} alt={msg.title || 'property'} className="result-thumb" /> : <div className="result-thumb" />}
+                <div className="result-meta">
+                  <div className="result-title">{msg.title || msg.text}</div>
+                  <div className="result-location">{msg.location || ''}</div>
+                  <div className="result-price">{msg.price ? `₹${msg.price.toLocaleString()}` : ''}</div>
+                  <div className="result-actions"><button onClick={() => onResultClick && onResultClick(msg.propertyId)} className="action-btn save-btn">View property</button></div>
                 </div>
-              )}
-
-              {/* Render a clickable result link when the bot sends a property result */}
-              {msg.type === 'result' && msg.propertyId && onResultClick && (
-                <div style={{ marginTop: '8px' }}>
-                  <button
-                    onClick={() => onResultClick(msg.propertyId)}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      border: '1px solid #888',
-                      background: 'transparent',
-                      color: '#9ad',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    View property
-                  </button>
+              </div>
+            ) : (
+              <div className="chat-message">
+                <div className="chat-message-avatar" aria-hidden>{msg.sender === 'user' ? '🧑' : '🤖'}</div>
+                <div className="chat-message-body">
+                  <div className={`msg-bubble ${msg.sender === 'user' ? 'msg-user' : 'msg-bot'}`}>{msg.text}</div>
+                  {msg.suggestions && msg.suggestions.length > 0 && (
+                    <div className="suggestions">
+                      {msg.suggestions.map((s, idx) => (
+                        <button key={idx} onClick={() => onUserMessage(typeof s === 'string' ? s : s.text, addMessage)} className="action-btn" style={{ background: '#666', color: '#fff' }}>{typeof s === 'string' ? s : s.label || s.text}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <div style={{
-        padding: '10px',
-        borderTop: '1px solid #444',
-        display: 'flex'
-      }}>
-        <input
-          style={{
-            flexGrow: 1,
-            padding: '8px',
-            fontSize: '1rem',
-            borderRadius: '8px',
-            border: 'none'
-          }}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && sendMessage()}
-          placeholder="Ask me about properties..."
-          autoFocus
-        />
-        <button
-          onClick={sendMessage}
-          style={{
-            marginLeft: '8px',
-            padding: '8px 12px',
-            borderRadius: '8px',
-            background: '#4caf50',
-            border: 'none',
-            color: 'white',
-            cursor: 'pointer'
-          }}
-        >
-          Send
-        </button>
+      <div className="chat-input-row">
+        <input className="chat-input" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendMessage()} placeholder="Ask me about properties or type 'guided'" />
+        <button className="chat-send-btn" onClick={sendMessage} aria-label="Send message">Send</button>
       </div>
     </div>
   );
