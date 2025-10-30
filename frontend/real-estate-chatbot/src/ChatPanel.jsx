@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-export default function ChatPanel({ onUserMessage }) {
+export default function ChatPanel({ onUserMessage, onResultClick }) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const messagesEndRef = useRef(null);
@@ -40,15 +40,58 @@ export default function ChatPanel({ onUserMessage }) {
             textAlign: msg.sender === 'user' ? 'right' : 'left',
             margin: '8px 0'
           }}>
-            <span style={{
-              backgroundColor: msg.sender === 'user' ? '#4caf50' : '#555',
-              padding: '8px',
-              borderRadius: '8px',
-              display: 'inline-block',
-              maxWidth: '80%'
-            }}>
-              {msg.text}
-            </span>
+            <div style={{ display: 'inline-block', maxWidth: '80%' }}>
+              <span style={{
+                backgroundColor: msg.sender === 'user' ? '#4caf50' : '#555',
+                padding: '8px',
+                borderRadius: '8px',
+                display: 'inline-block',
+                verticalAlign: 'top'
+              }}>
+                {msg.text}
+              </span>
+
+              {/* Render suggestions if present (quick reply buttons) */}
+              {msg.suggestions && msg.suggestions.length > 0 && (
+                <div style={{ marginTop: '8px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {msg.suggestions.map((s, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => onUserMessage(typeof s === 'string' ? s : s.text, addMessage)}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: '#666',
+                        color: 'white'
+                      }}
+                    >
+                      {typeof s === 'string' ? s : s.label || s.text}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Render a clickable result link when the bot sends a property result */}
+              {msg.type === 'result' && msg.propertyId && onResultClick && (
+                <div style={{ marginTop: '8px' }}>
+                  <button
+                    onClick={() => onResultClick(msg.propertyId)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '8px',
+                      border: '1px solid #888',
+                      background: 'transparent',
+                      color: '#9ad',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    View property
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
