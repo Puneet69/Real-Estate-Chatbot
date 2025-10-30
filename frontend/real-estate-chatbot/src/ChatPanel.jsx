@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-export default function ChatPanel({ onUserMessage, onResultClick }) {
+export default function ChatPanel({ onUserMessage, onResultClick, onClose }) {
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const messagesEndRef = useRef(null);
@@ -28,8 +28,29 @@ export default function ChatPanel({ onUserMessage, onResultClick }) {
       background: '#222',
       color: 'white',
       display: 'flex',
-      flexDirection: 'column'
+      flexDirection: 'column',
+      position: 'relative',
+      boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
     }}>
+      {/* Close button (visible when rendered as floating panel) */}
+      {onClose && (
+        <button
+          onClick={onClose}
+          aria-label="Close chat"
+          style={{
+            position: 'absolute',
+            right: '8px',
+            top: '8px',
+            background: 'transparent',
+            border: 'none',
+            color: '#bbb',
+            cursor: 'pointer',
+            fontSize: '18px'
+          }}
+        >
+          ✕
+        </button>
+      )}
       <div style={{
         flexGrow: 1,
         overflowY: 'auto',

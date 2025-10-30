@@ -314,9 +314,11 @@ function App() {
     favorites.includes(String(p.id))
   );
 
+  const [showChat, setShowChat] = useState(false);
+
   return (
-    <div style={{ display: "flex", height: "100vh", padding: "10px", gap: "20px" }}>
-      <ChatPanel onUserMessage={handleChatInput} onResultClick={scrollToProperty} />
+    <div style={{ display: "flex", height: "100vh", padding: "10px", gap: "20px", position: 'relative' }}>
+      {/* ChatPanel is rendered as a floating panel via the toggle button below */}
 
       <div style={{ flex: 1, overflowY: "auto" }}>
         <h1 style={{ fontSize: "2.8rem", marginBottom: "10px" }}>
@@ -342,7 +344,7 @@ function App() {
         <h2>Saved Favorites</h2>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "24px", marginBottom: "30px" }}>
           {favoriteProps.length > 0 ? (
-                favoriteProps.map((p) => (
+            favoriteProps.map((p) => (
               <div
                 id={`property-${p.id}`}
                 key={p.id}
@@ -442,6 +444,52 @@ function App() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Floating chat button + panel */}
+      <div style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 1400 }}>
+        {/* Panel container (slides up when open) */}
+        <div
+          aria-hidden={!showChat}
+          style={{
+            position: 'fixed',
+            right: 24,
+            bottom: 90,
+            width: 400,
+            transform: showChat ? 'translateY(0) scale(1)' : 'translateY(10px) scale(.98)',
+            opacity: showChat ? 1 : 0,
+            pointerEvents: showChat ? 'auto' : 'none',
+            transition: 'transform 240ms cubic-bezier(.2,.9,.3,1), opacity 200ms ease',
+          }}
+        >
+          <ChatPanel onUserMessage={(t, a) => { handleChatInput(t, a); }} onResultClick={scrollToProperty} onClose={() => setShowChat(false)} />
+        </div>
+
+        {/* Floating toggle button */}
+        <button
+          onClick={() => setShowChat((s) => !s)}
+          aria-label="Open chat"
+          style={{
+            width: 64,
+            height: 64,
+            borderRadius: '50%',
+            border: 'none',
+            background: '#4caf50',
+            color: 'white',
+            boxShadow: '0 8px 24px rgba(76,175,80,0.25)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'transform 160ms ease, box-shadow 160ms ease',
+            transform: showChat ? 'scale(0.92) rotate(-10deg)' : 'scale(1)',
+          }}
+        >
+          {/* Simple chat icon */}
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" fill="white" />
+          </svg>
+        </button>
       </div>
     </div>
   );
