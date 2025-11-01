@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # MongoDB service
+  mongodb:
+    image: mongo:7
+    container_name: real-estate-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: real_estate_db
+    volumes:
+      - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - real-estate-network
+
+  # Backend service
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: real-estate-backend
+    restart: unless-stopped
+    ports:
+      - "5008:5008"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/real_estate_db?authSource=admin
+      - PORT=5008
+      - NODE_ENV=development
+      - AI_SERVER_URL=http://ai-server:8000
+    depends_on:
+      - mongodb
+      - ai-server
+    volumes:
+      - ./backend:/app/backend
+      - /app/backend/node_modules
+    networks:
+      - real-estate-network
+
+  # AI Server service
+  ai-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.ai
+    container_name: real-estate-ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - HOST=0.0.0.0
+      - PORT=8000
+    volumes:
+      - ./backend/ai_server:/app/ai_server
+    networks:
+      - real-estate-network
+
+  # Frontend service (development)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: real-estate-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_BACKEND_URL=http://localhost:5008
+    volumes:
+      - ./frontend/real-estate-chatbot:/app/frontend
+      - /app/frontend/node_modules
+    depends_on:
+      - backend
+    networks:
+      - real-estate-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  real-estate-network:
+    driver: bridge
