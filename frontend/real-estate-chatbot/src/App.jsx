@@ -123,6 +123,9 @@ function extractFilters(text) {
 function performPropertySearch(properties, text) {
   const { location, minPrice, maxPrice, bedrooms, propertyType, amenities } = extractFilters(text);
 
+  // Check if user wants ONLY a specific location
+  const isExclusiveLocation = /only.*in|in.*only|just.*in|specifically.*in|in\s+[a-z]+|show.*in|properties.*in/i.test(text);
+
   // Score each property and return a sorted list by relevance
   const scored = properties.map(p => {
     let score = 0;
@@ -131,9 +134,14 @@ function performPropertySearch(properties, text) {
 
     // Location match gives strong signal
     if (location) {
-      if (loc === location) score += 50;
-      else if (loc.includes(location)) score += 30;
-      else if (title.includes(location)) score += 15;
+      if (loc === location || loc.includes(location)) {
+        score += 50;
+      } else if (title.includes(location)) {
+        score += 15;
+      } else if (isExclusiveLocation || location) {
+        // If user specified a location, exclude non-matching properties
+        return { p, score: -1 };
+      }
     }
 
     // Price range
@@ -174,7 +182,21 @@ function performPropertySearch(properties, text) {
   // Filter out properties that clearly don't match location/price/bedrooms restrictions
   const filtered = scored.filter(item => {
     const p = item.p;
-    if (location && !((p.location||"").toLowerCase().includes(location) || (p.title||"").toLowerCase().includes(location))) return item.score > 10; // allow small matches
+    
+    // Exclude properties with negative scores (failed exclusive location match)
+    if (item.score < 0) return false;
+    
+    // Strict location filtering - if location is specified, only show matching properties
+    if (location) {
+      const propertyLocation = (p.location || "").toLowerCase();
+      const propertyTitle = (p.title || "").toLowerCase();
+      
+      // Check if property location contains the requested location
+      if (!propertyLocation.includes(location) && !propertyTitle.includes(location)) {
+        return false; // Exclude properties that don't match the requested location
+      }
+    }
+    
     if (typeof p.price === 'number') {
       if (p.price < (minPrice || 0)) return false;
       if (maxPrice !== Infinity && p.price > maxPrice) return false;
