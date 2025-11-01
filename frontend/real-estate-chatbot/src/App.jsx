@@ -193,6 +193,8 @@ function performPropertySearch(properties, text) {
 }
 
 function App() {
+  // Backend base URL (configurable via Vite env variable VITE_BACKEND_URL)
+  const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:5003';
   const [properties, setProperties] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [search, setSearch] = useState("");
@@ -210,14 +212,14 @@ function App() {
   const user = "demo@email.com";
 
   useEffect(() => {
-    fetch("http://localhost:5001/api/properties")
+    fetch(`${BACKEND}/api/properties`)
       .then((res) => res.json())
       .then((data) => setProperties(data));
   }, []);
 
   // Favorites logic
   const fetchFavorites = async () => {
-    const res = await fetch(`http://localhost:5001/api/favorites?user=${encodeURIComponent(user)}`);
+  const res = await fetch(`${BACKEND}/api/favorites?user=${encodeURIComponent(user)}`);
     if (res.ok) {
       const data = await res.json();
       setFavorites(data.map((f) => String(f.propertyId)));
@@ -229,7 +231,7 @@ function App() {
   }, []);
 
   const saveFavorite = async (propertyId) => {
-    const res = await fetch("http://localhost:5001/api/favorites", {
+  const res = await fetch(`${BACKEND}/api/favorites`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user, propertyId }),
@@ -241,7 +243,7 @@ function App() {
   };
 
   const removeFavorite = async (propertyId) => {
-    const res = await fetch("http://localhost:5001/api/favorites", {
+  const res = await fetch(`${BACKEND}/api/favorites`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user, propertyId }),
@@ -278,6 +280,29 @@ function App() {
     } catch {
       // if AI responder fails for any reason, fall back to old flows
     }
+
+    // Fire-and-forget: also ask the hosted AI for a conversational reply so the chat
+    // always returns an assistant-style response. This runs in background and will
+    // append the assistant reply when available. It won't block property search.
+    (async () => {
+      try {
+        const resp = await fetch(`${BACKEND}/api/ai`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: text, max_tokens: 160 }),
+        });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          console.warn('AI proxy error', resp.status, txt);
+          return;
+        }
+        const data = await resp.json();
+        const reply = (data && (data.text || data.answer || data.message)) || (typeof data === 'string' ? data : JSON.stringify(data));
+        if (reply) addMessage({ sender: 'bot', text: reply });
+      } catch (e) {
+        console.warn('AI fetch failed', e);
+      }
+    })();
 
     // Extract filters and look for ambiguous cases
     const filters = extractFilters(text);

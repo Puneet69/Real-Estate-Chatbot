@@ -54,6 +54,49 @@ app.get('/api/properties', (req, res) => {
   }
 });
 
+// AI proxy endpoint: forwards prompt to the Python FastAPI inference server
+app.post('/api/ai', async (req, res) => {
+  try {
+    const { prompt, max_tokens, temperature } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
+    // If an external AI provider is configured, call it directly (useful for hosted inference)
+    const providerUrl = process.env.AI_PROVIDER_URL;
+    const providerKey = process.env.AI_API_KEY;
+    if (providerUrl) {
+      // Provider expects the same JSON shape; include Authorization if API key is set
+      const headers = { 'Content-Type': 'application/json' };
+      if (providerKey) headers['Authorization'] = `Bearer ${providerKey}`;
+      const response = await fetch(providerUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ prompt, max_tokens, temperature })
+      });
+      if (!response.ok) {
+        const txt = await response.text();
+        return res.status(502).json({ error: 'AI provider error', details: txt });
+      }
+      const data = await response.json();
+      return res.json(data);
+    }
+
+    // Forward to local Python inference server (default: http://localhost:8000)
+    const inferUrl = (process.env.AI_SERVER_URL || 'http://localhost:8000') + '/generate';
+    const response = await fetch(inferUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, max_tokens, temperature })
+    });
+    if (!response.ok) {
+      const txt = await response.text();
+      return res.status(502).json({ error: 'AI server error', details: txt });
+    }
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Save a property as favorite
 app.post('/api/favorites', async (req, res) => {
   try {
@@ -100,7 +143,7 @@ app.delete('/api/favorites', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5008;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 server.on('error', (err) => {
