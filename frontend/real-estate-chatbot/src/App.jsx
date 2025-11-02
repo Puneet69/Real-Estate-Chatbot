@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import ChatPanel from "./ChatPanel";
+import PropertyModal from "./PropertyModal";
 import "./App.css";
 import nlp from "compromise";
 
@@ -216,7 +217,7 @@ function performPropertySearch(properties, text) {
 
 function App() {
   // Backend base URL (configurable via Vite env variable VITE_BACKEND_URL)
-  const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:5003';
+  const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5008';
   const [properties, setProperties] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [search, setSearch] = useState("");
@@ -286,16 +287,23 @@ function App() {
     setTimeout(() => setHighlighted(null), 4000);
   };
 
+  const handlePropertyClick = (property) => {
+    setSelectedProperty(property);
+    setShowPropertyModal(true);
+  };
+
+  const closePropertyModal = () => {
+    setShowPropertyModal(false);
+    setSelectedProperty(null);
+  };
+
   const handleChatInput = (text, addMessage) => {
     // If guided mode active, handle guided answers
     if (guidedMode) {
       handleGuidedAnswer(text, addMessage);
       return;
     }
-    // Echo typing message
-    addMessage({ sender: "bot", text: "Let me check..." });
-
-    // Try the lightweight AI responder first
+    // Try the lightweight AI responder first (includes conversational handling)
     try {
       const handled = generateAIResponse(text, addMessage);
       if (handled) return;
@@ -303,15 +311,19 @@ function App() {
       // if AI responder fails for any reason, fall back to old flows
     }
 
+    // Only show "Let me check..." for actual property searches
+    addMessage({ sender: "bot", text: "Let me check..." });
+
     // Fire-and-forget: also ask the hosted AI for a conversational reply so the chat
     // always returns an assistant-style response. This runs in background and will
     // append the assistant reply when available. It won't block property search.
     (async () => {
       try {
+        const systemPrompt = `You are Ryna, a friendly and knowledgeable AI real estate assistant. You help users find properties, answer questions about real estate, and provide expert guidance. Always respond in a helpful, professional, and personable way. User query: ${text}`;
         const resp = await fetch(`${BACKEND}/api/ai`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: text, max_tokens: 160 }),
+          body: JSON.stringify({ prompt: systemPrompt, max_tokens: 160 }),
         });
         if (!resp.ok) {
           const txt = await resp.text();
@@ -469,6 +481,39 @@ function App() {
   };
 
   const generateAIResponse = (text, addMessage) => {
+    // Handle conversational messages first (greetings, questions about Ryna, etc.)
+    const lowerText = text.toLowerCase().trim();
+    
+    // Greetings and casual conversation
+    if (/^(hi|hello|hey|good morning|good afternoon|good evening|greetings)$/i.test(lowerText)) {
+      addMessage({ sender: 'bot', text: 'Hello! Great to meet you! I\'m here to help you find the perfect property. Are you looking to buy or rent? And do you have a specific location in mind?' });
+      return true;
+    }
+    
+    // Questions about Ryna/identity
+    if (/who are you|what is your name|tell me about yourself|what can you do/i.test(lowerText)) {
+      addMessage({ sender: 'bot', text: 'I\'m Ryna, your dedicated AI real estate assistant! I specialize in helping people find their ideal properties. I can search our database, provide market insights, answer pricing questions, and guide you step-by-step through your property search. How can I assist you today?' });
+      return true;
+    }
+    
+    // Thank you messages
+    if (/thank you|thanks|appreciate|grateful/i.test(lowerText)) {
+      addMessage({ sender: 'bot', text: 'You\'re very welcome! I\'m happy to help. Is there anything else about properties or real estate that I can assist you with?' });
+      return true;
+    }
+    
+    // General help requests
+    if (/help|assist|support/i.test(lowerText) && !/find|search|property|house|apartment/i.test(lowerText)) {
+      addMessage({ sender: 'bot', text: 'I\'d be happy to help! I can assist you with:\n• Finding properties based on your criteria\n• Providing price information and market insights\n• Answering questions about specific locations\n• Guiding you through a step-by-step search\n• Connecting you with our dealer at 📞 7982323147\n\nWhat would you like to explore?' });
+      return true;
+    }
+    
+    // Contact/phone number requests
+    if (/contact|phone|call|number|dealer|agent/i.test(lowerText)) {
+      addMessage({ sender: 'bot', text: 'You can contact our property dealer directly at:\n📞 **7982323147**\n\nThey\'re available 9 AM - 8 PM for property inquiries, site visits, and detailed discussions. You can also click the "📞 Call" button on any property card or in the property details modal!' });
+      return true;
+    }
+
     const filters = extractFilters(text);
     const results = performPropertySearch(properties, text);
 
@@ -493,7 +538,7 @@ function App() {
       }
       const s = statsFor(scopeItems.length > 0 ? scopeItems : properties);
       if (!s) {
-        addMessage({ sender: 'bot', text: 'I don\'t have price data for those criteria. Try a different location or check the property listings.' });
+        addMessage({ sender: 'bot', text: 'I don\'t have price data for those specific criteria yet. Could you try a different location or let me show you our available listings?' });
         return true;
       }
       const locText = filters.location ? ` in ${filters.location}` : '';
@@ -509,7 +554,7 @@ function App() {
     // If user asks a question about availability or recommendations
     if (/suggest|recommend|show me|find me|looking for|available|any listings|help me find/i.test(text)) {
       if (!results || results.length === 0) {
-        addMessage({ sender: 'bot', text: 'I could not find matching properties — try widening your criteria or tell me a location and budget.' });
+        addMessage({ sender: 'bot', text: 'I couldn\'t find properties matching those exact criteria. Let me help you by adjusting your search - could you tell me your preferred location and budget range?' });
         return true;
       }
       // Compose a short rationale explaining why top result is recommended
@@ -528,10 +573,18 @@ function App() {
       return true;
     }
 
-    // Generic fallback: if search yields results, summarize and present them
-    if (results && results.length > 0) {
+    // Generic fallback: only show properties if the text contains actual property-related keywords
+    const hasPropertyIntent = /property|properties|house|home|apartment|flat|bhk|bedroom|buy|rent|sale|listing|real estate|condo|villa|townhouse|studio/i.test(text);
+    
+    if (hasPropertyIntent && results && results.length > 0) {
       addMessage({ sender: 'bot', text: `I found ${results.length} properties that seem relevant. Top picks:` });
-  results.slice(0,5).forEach(p => addMessage({ sender: 'bot', text: `${p.title} — ${p.location} — ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price }));
+      results.slice(0,5).forEach(p => addMessage({ sender: 'bot', text: `${p.title} — ${p.location} — ${formatCurrency(p.price)}`, type: 'result', propertyId: p.id, title: p.title, image: p.image_url, location: p.location, price: p.price }));
+      return true;
+    }
+
+    // If no property intent detected, provide helpful guidance
+    if (!hasPropertyIntent) {
+      addMessage({ sender: 'bot', text: 'I\'m here to help you with real estate! You can ask me things like:\n• "Show me 2 BHK apartments in Mumbai"\n• "What\'s the average price in New York?"\n• "I\'m looking for a house under ₹50 lakhs"\n• Or just click "Guided" for step-by-step assistance!\n\nWhat type of property are you interested in?' });
       return true;
     }
 
@@ -571,6 +624,8 @@ function App() {
   );
 
   const [showChat, setShowChat] = useState(false);
+  const [selectedProperty, setSelectedProperty] = useState(null);
+  const [showPropertyModal, setShowPropertyModal] = useState(false);
 
   return (
     <div className="app-root">
@@ -668,19 +723,40 @@ function App() {
         <div className="property-grid">
           {filteredProperties.map((p) => (
             <div id={`property-${p.id}`} key={p.id} className="property-card" style={{ boxShadow: highlighted === String(p.id) || highlighted === p.id ? "0 0 0 3px #66b2ff66" : undefined }}>
-              <img className="property-image" src={p.image_url} alt={p.title} />
-              <div className="card-body">
-                <h2 className="card-title">{p.title}</h2>
-                <p className="card-location">Location: {p.location}</p>
-                <p className="card-price">{formatCurrency(p.price)}</p>
-                <button onClick={() => saveFavorite(p.id)} disabled={favorites.includes(String(p.id))} className={`action-btn ${favorites.includes(String(p.id)) ? '' : 'save-btn'}`}>
+              <div className="property-card-clickable" onClick={() => handlePropertyClick(p)}>
+                <img className="property-image" src={p.image_url} alt={p.title} />
+                <div className="card-body">
+                  <h2 className="card-title">{p.title}</h2>
+                  <p className="card-location">Location: {p.location}</p>
+                  <p className="card-price">{formatCurrency(p.price)}</p>
+                  <div className="click-hint">Click for details</div>
+                </div>
+              </div>
+              <div className="card-actions">
+                <button onClick={(e) => { e.stopPropagation(); saveFavorite(p.id); }} disabled={favorites.includes(String(p.id))} className={`action-btn ${favorites.includes(String(p.id)) ? '' : 'save-btn'}`}>
                   {favorites.includes(String(p.id)) ? '✓ Favorited' : '♥ Save to Favorites'}
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); window.open('tel:7982323147', '_self'); }} 
+                  className="action-btn contact-btn"
+                  title="Call dealer at 7982323147"
+                >
+                  📞 Call
                 </button>
               </div>
             </div>
           ))}
         </div>
         </main>
+
+      {/* Property Details Modal */}
+      <PropertyModal 
+        property={selectedProperty} 
+        isOpen={showPropertyModal} 
+        onClose={closePropertyModal}
+        onSaveFavorite={saveFavorite}
+        favorites={favorites}
+      />
 
       {/* Floating chat button + panel */}
   <div className="floating-controls">
