@@ -1,0 +1,10 @@
+# Railway should NOT use Docker
+# This file forces Railway to use Nixpacks for Node.js auto-detection
+# Keep this file to prevent Dockerfile usage
+
+# Railway Deployment Configuration:
+# - Builder: NIXPACKS (automatic Node.js detection)
+# - Root Directory: backend  
+# - Start Command: node server.js (from railway.json)
+
+# DO NOT DELETE THIS FILE - it prevents Docker builds
