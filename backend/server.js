@@ -144,7 +144,12 @@ app.delete('/api/favorites', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 5008;
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const HOST = process.env.HOST || '0.0.0.0'; // Railway needs 0.0.0.0 binding
+
+const server = app.listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`);
+  console.log('Environment:', process.env.NODE_ENV || 'development');
+});
 
 server.on('error', (err) => {
   if (err && err.code === 'EADDRINUSE') {
