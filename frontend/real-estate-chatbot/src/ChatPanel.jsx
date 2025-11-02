@@ -2,7 +2,12 @@ import { useState, useEffect, useRef } from 'react';
 
 export default function ChatPanel({ onUserMessage, onResultClick, onClose, onReady }) {
   const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([
+    { 
+      sender: 'bot', 
+      text: "Hi! I'm Ryna, your AI real estate assistant. I can help you find properties, answer questions about pricing, and guide you through your property search. What are you looking for today?" 
+    }
+  ]);
   const messagesEndRef = useRef(null);
 
   const addMessage = (msg) => setMessages((prev) => [...prev, msg]);
@@ -31,8 +36,8 @@ export default function ChatPanel({ onUserMessage, onResultClick, onClose, onRea
         <div className="chat-header-left">
           <div className="chat-avatar" aria-hidden />
           <div>
-            <div className="chat-title">Real Estate Assistant</div>
-            <div className="chat-sub">Ask me about listings, budget, or guided search</div>
+            <div className="chat-title">Ryna - Real Estate Assistant</div>
+            <div className="chat-sub">Your AI property specialist</div>
           </div>
         </div>
         <div className="chat-header-actions">
