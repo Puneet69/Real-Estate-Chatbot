@@ -1,0 +1,12 @@
+# 🚫 DISABLE ROOT PACKAGE.JSON FOR RAILWAY
+
+# Railway should ONLY use backend/package.json
+# This file prevents Railway from using root package.json
+
+backend/
+frontend/
+*.md
+*.sh
+package.json
+Dockerfile*
+docker-compose.yml
